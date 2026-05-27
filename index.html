@@ -348,7 +348,7 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
 // ══════════════════════════════════════════════════════════════
 // GANTI URL INI dengan link CSV dari Google Sheets kamu (sheet 2026)
 // File → Bagikan → Publikasikan ke web → pilih sheet 2026 → CSV
-const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQhPHh5EYrI9zxDYg1qsFbEWxedCFYk8XPQbQ0m4wTT6EIGIzc3MpHZ5_bCAL2yb6saBqz33QxPaxFr/pub?gid=183782417&single=true&output=csv';
+const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT3AcxgyXE2lhGdxWuq3EhzyRCVRS8tWe5HhKXT6OpC2V2dCZ3LqZt85mGbBI7LUC-IzHoWTbyYUCox/pub?gid=87411756&single=true&output=csv';
 // ══════════════════════════════════════════════════════════════
 
 // Kolom bulan di sheet (sesuai baris header row 6)
@@ -388,6 +388,36 @@ function fmtRpFull(n) {
   return 'Rp ' + Math.round(n).toLocaleString('id-ID');
 }
 function paid(v) { return parseNum(v) > 0 || (typeof v === 'string' && /^(ok|lunas)/i.test(v.trim())); }
+
+// Baca keterangan "Lunas = Desember 2026" → return monthIdx (0=Jan dst) atau -1
+const BULAN_MAP = {
+  'jan':0,'januari':0,'feb':1,'februari':1,'mar':2,'maret':2,
+  'apr':3,'april':3,'mei':4,'may':4,'jun':5,'juni':5,
+  'jul':6,'juli':6,'agu':7,'agustus':7,'aug':7,'sep':8,'september':8,
+  'okt':9,'oktober':9,'oct':9,'nov':10,'november':10,'des':11,'desember':11,'dec':11
+};
+function lunasUntilMonth(r) {
+  // Cek semua nilai di months + keterangan untuk "Lunas = Bulan"
+  const sources = [r.keterangan, ...Object.values(r.months)];
+  for (const v of sources) {
+    if (!v || typeof v !== 'string') continue;
+    const m = v.match(/lunas\s*[=:]\s*([a-z]+)/i);
+    if (m) {
+      const idx = BULAN_MAP[m[1].toLowerCase()];
+      if (idx !== undefined) return idx;
+    }
+  }
+  return -1;
+}
+// Cek apakah bulan 2026 (monthIdx 0-based Jan=0) sudah lunas untuk baris r
+function isPaidMonth(r, monthIdx) {
+  const lunasIdx = lunasUntilMonth(r);
+  if (lunasIdx >= monthIdx) return true;
+  const col2026 = COL_MONTHS.filter(m => !m.isPrev);
+  const m = col2026.find(m => m.monthIdx === monthIdx);
+  if (!m) return false;
+  return paid(r.months[m.key]);
+}
 function splitLine(line) {
   const r=[]; let cur='', inQ=false;
   for(let i=0;i<line.length;i++){
@@ -497,17 +527,17 @@ function buildUI(fin) {
   const total = allIuran.length;
   const currentMonth = new Date().getMonth(); // 0-based
 
-  // Count status berdasar kolom 2026 saja
+  // Count status berdasar kolom 2026 (pakai isPaidMonth yang respects lunasUntil)
   const col2026 = COL_MONTHS.filter(m => !m.isPrev);
   const lunasCnt = allIuran.filter(r => {
-    return col2026.slice(0, currentMonth + 1).every(m => paid(r.months[m.key]));
+    return col2026.slice(0, currentMonth + 1).every(m => isPaidMonth(r, m.monthIdx));
   }).length;
   const sebagianCnt = allIuran.filter(r => {
-    const hasSome = col2026.some(m => paid(r.months[m.key]));
-    const allPaid = col2026.slice(0, currentMonth + 1).every(m => paid(r.months[m.key]));
+    const hasSome = col2026.some(m => isPaidMonth(r, m.monthIdx));
+    const allPaid = col2026.slice(0, currentMonth + 1).every(m => isPaidMonth(r, m.monthIdx));
     return hasSome && !allPaid;
   }).length;
-  const belumCnt = allIuran.filter(r => col2026.every(m => !paid(r.months[m.key]))).length;
+  const belumCnt = allIuran.filter(r => col2026.every(m => !isPaidMonth(r, m.monthIdx))).length;
 
   document.getElementById('s-total').textContent   = total;
   document.getElementById('s-lunas').textContent   = lunasCnt;
@@ -517,12 +547,14 @@ function buildUI(fin) {
   const pct = total > 0 ? Math.round(lunasCnt / total * 100) : 0;
   setTimeout(() => { document.getElementById('prog-fill').style.width = pct + '%'; }, 100);
   document.getElementById('prog-left').textContent  = `${lunasCnt} dari ${total} anggota (${pct}%)`;
-  document.getElementById('prog-right').textContent = fmtRp(allIuran.reduce((s,r) => s + col2026.reduce((ss,m) => ss + parseNum(r.months[m.key]), 0), 0));
+  document.getElementById('prog-right').textContent = fmtRp(allIuran.reduce((s,r) => s + col2026.reduce((ss,m) => {
+    const v = r.months[m.key]; return ss + (parseNum(v) > 0 ? parseNum(v) : 0);
+  }, 0), 0));
 
   // Month pills (hanya bulan 2026)
   const mp = document.getElementById('month-pills');
   mp.innerHTML = col2026.map((m, i) => {
-    const belum = allIuran.filter(r => !paid(r.months[m.key])).length;
+    const belum = allIuran.filter(r => !isPaidMonth(r, m.monthIdx)).length;
     const many = belum > total * 0.5;
     return `<button class="mpill${many ? ' many-missing' : ''}" data-m="${m.key}" onclick="setMonth('${m.key}')">${MN2026_FULL[i]} <span class="count">${belum} blm</span></button>`;
   }).join('');
@@ -547,49 +579,75 @@ function renderIuran() {
 
   let list = allIuran.filter(r => {
     const mq = r.nama.toLowerCase().includes(q) || r.blok.toLowerCase().includes(q);
-    const col2026Paid = col2026.slice(0, currentMonth + 1).every(m => paid(r.months[m.key]));
-    const hasSome     = col2026.some(m => paid(r.months[m.key]));
+    const col2026Paid = col2026.slice(0, currentMonth + 1).every(m => isPaidMonth(r, m.monthIdx));
+    const hasSome     = col2026.some(m => isPaidMonth(r, m.monthIdx));
     let mf = true;
     if (filterMode === 'lunas') mf = col2026Paid;
-    if (filterMode === 'belum') mf = col2026.every(m => !paid(r.months[m.key]));
-    const mb = activeMonth === null || !paid(r.months[activeMonth]);
+    if (filterMode === 'belum') mf = col2026.every(m => !isPaidMonth(r, m.monthIdx));
+    const mb = activeMonth === null || !isPaidMonth(r, COL_MONTHS.find(x=>x.key===activeMonth)?.monthIdx ?? -99);
     return mq && mf && mb;
   });
 
   let totalKas = 0;
   const rows = list.map(r => {
-    const col2026Paid = col2026.slice(0, currentMonth + 1).every(m => paid(r.months[m.key]));
-    const hasSome     = col2026.some(m => paid(r.months[m.key]));
+    const col2026Paid = col2026.slice(0, currentMonth + 1).every(m => isPaidMonth(r, m.monthIdx));
+    const hasSome     = col2026.some(m => isPaidMonth(r, m.monthIdx));
     let statusClass, statusText;
     if (col2026Paid) { statusClass='ok'; statusText='Lunas'; }
     else if (hasSome) { statusClass='partial'; statusText='Sebagian'; }
     else { statusClass='no'; statusText='Belum'; }
 
-    const dots = COL_MONTHS.map(m => {
+    // Badge untuk kolom 2025 (keterangan saja, bukan dot bulan)
+    const ket2025 = r.months['2025'] || '';
+    let badge2025 = '';
+    if (ket2025) {
+      const isOk2025 = /^ok$/i.test(ket2025.trim());
+      const color = isOk2025 ? 'background:#e6f5ee;color:#0a7c52;border:1px solid #a3d9be'
+                             : 'background:#fff3cd;color:#7a5200;border:1px solid #f0c060';
+      badge2025 = `<span style="display:inline-block;font-size:9px;font-weight:600;padding:2px 7px;border-radius:6px;font-family:DM Mono,monospace;white-space:nowrap;${color}">${ket2025}</span>`;
+    }
+
+    const dots = COL_MONTHS.filter(m => m.key !== '2025').map(m => {
       const v = r.months[m.key];
-      const isPaidVal = paid(v);
       let dotClass, title;
       if (m.isPrev) {
+        // Sep24-Des24: tampilkan abu jika tidak ada, hijau jika ada
+        const isPaidVal = paid(v);
         dotClass = isPaidVal ? 'ok' : 'prev';
-        title = `${m.key}: ${isPaidVal ? fmtRp(parseNum(v)) : 'Tidak tercatat'}`;
+        title = `${m.key}: ${isPaidVal ? fmtRp(parseNum(v)) : '—'}`;
       } else {
-        if (isPaidVal) { dotClass = 'ok'; title = `${m.key}: ${fmtRp(parseNum(v))}`; }
-        else if (m.monthIdx > currentMonth) { dotClass = 'future'; title = `${m.key}: Belum waktunya`; }
-        else { dotClass = 'no'; title = `${m.key}: Belum bayar`; }
+        // Bulan 2026: pakai isPaidMonth yang cek lunasUntil
+        const isPaidVal = isPaidMonth(r, m.monthIdx);
+        if (isPaidVal) {
+          dotClass = 'ok';
+          title = `${m.key}: Lunas`;
+        } else if (m.monthIdx > currentMonth) {
+          dotClass = 'future';
+          title = `${m.key}: Belum waktunya`;
+        } else {
+          dotClass = 'no';
+          title = `${m.key}: Belum bayar`;
+        }
       }
       return `<div class="dot ${dotClass}" title="${title}">${m.label}</div>`;
     }).join('');
 
-    const total2026 = col2026.reduce((s, m) => s + parseNum(r.months[m.key]), 0);
+    // Hitung total 2026 dari nilai numerik saja (bukan keterangan teks)
+    const total2026 = col2026.reduce((s, m) => {
+      const v = r.months[m.key];
+      return s + (parseNum(v) > 0 ? parseNum(v) : 0);
+    }, 0);
     totalKas += total2026;
 
-    const keterInfo = r.keterangan ? `<br><span class="status-pill lunas-info">${r.keterangan}</span>` : '';
+    // Keterangan lunas dari kolom bulan (mis. "Lunas = Desember 2026")
+    const lunasKet = Object.values(r.months).find(v => typeof v === 'string' && /lunas\s*=/i.test(v)) || '';
+    const keterInfo = lunasKet ? `<br><span class="status-pill lunas-info">${lunasKet}</span>` : '';
 
     return `<tr>
       <td class="no-cell">${r.no}</td>
       <td><span class="blok-tag">${r.blok}</span></td>
       <td class="nama-cell">${r.nama}${keterInfo}</td>
-      <td><div class="dots">${dots}</div></td>
+      <td><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">${badge2025}<div class="dots">${dots}</div></div></td>
       <td class="total-cell">${total2026 > 0 ? fmtRp(total2026) : '—'}</td>
       <td style="text-align:center"><span class="status-pill ${statusClass}">${statusText}</span></td>
     </tr>`;
