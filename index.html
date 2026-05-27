@@ -292,7 +292,7 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
               <th style="width:36px">No</th>
               <th style="width:72px">Blok</th>
               <th>Pemilik</th>
-              <th id="col-months-header">Sep24 Okt24 Nov24 Des24 · 2025 · Jan Feb Mar Apr</th>
+              <th>'25 · Jan · Feb · Mar · Apr</th>
               <th style="text-align:right;width:90px">Total 2026</th>
               <th style="text-align:center;width:80px">Status</th>
             </tr>
@@ -351,18 +351,15 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
 const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQhPHh5EYrI9zxDYg1qsFbEWxedCFYk8XPQbQ0m4wTT6EIGIzc3MpHZ5_bCAL2yb6saBqz33QxPaxFr/pub?gid=183782417&single=true&output=csv';
 // ══════════════════════════════════════════════════════════════
 
-// Kolom bulan di sheet (sesuai baris header row 6)
-// col5=Sep24, col6=Okt24, col7=Nov24, col8=Des24, col9=2025(saldo), col10=JAN, col11=FEB, col12=MAR, col13=APR
+// Layout CSV baru (kolom 2024 sudah dihapus dari sheet):
+// col0=NO, col1=BLOK, col2=PEMILIK, col3=2025(ket), col4=JAN, col5=FEB, col6=MAR, col7=APR
+// col8-11 = kolom pengeluaran kanan (NO,Tanggal,Uraian,Masuk,Keluar,Bulan,Jumlah)
 const COL_MONTHS = [
-  { col: 5,  key: 'SEP24', label: 'Sep', sublabel: "'24", isPrev: true  },
-  { col: 6,  key: 'OKT24', label: 'Okt', sublabel: "'24", isPrev: true  },
-  { col: 7,  key: 'NOV24', label: 'Nov', sublabel: "'24", isPrev: true  },
-  { col: 8,  key: 'DES24', label: 'Des', sublabel: "'24", isPrev: true  },
-  { col: 9,  key: '2025',  label: '\'25', sublabel: '',   isPrev: true  },
-  { col: 10, key: 'JAN',   label: 'J',   sublabel: '',   isPrev: false, monthIdx: 0 },
-  { col: 11, key: 'FEB',   label: 'F',   sublabel: '',   isPrev: false, monthIdx: 1 },
-  { col: 12, key: 'MAR',   label: 'M',   sublabel: '',   isPrev: false, monthIdx: 2 },
-  { col: 13, key: 'APR',   label: 'A',   sublabel: '',   isPrev: false, monthIdx: 3 },
+  { col: 3,  key: '2025',  label: "'25", isPrev: true                   },
+  { col: 4,  key: 'JAN',   label: 'J',   isPrev: false, monthIdx: 0    },
+  { col: 5,  key: 'FEB',   label: 'F',   isPrev: false, monthIdx: 1    },
+  { col: 6,  key: 'MAR',   label: 'M',   isPrev: false, monthIdx: 2    },
+  { col: 7,  key: 'APR',   label: 'A',   isPrev: false, monthIdx: 3    },
 ];
 const MN2026 = ['JAN','FEB','MAR','APR']; // bulan 2026 yang ada di sheet
 const MN2026_FULL = ['Januari','Februari','Maret','April'];
@@ -474,38 +471,56 @@ function parseCSV(text) {
   }
   if (sisaTotal === 0 && masukTotal > 0) sisaTotal = masukTotal - keluarTotal;
 
-  // Parse rows
+  // Parse rows — layout baru: NO=col0, BLOK=col1, PEMILIK=col2, 2025=col3, JAN=col4, FEB=col5, MAR=col6, APR=col7
+  // Pengeluaran (sisi kanan sheet): NO=col9, Tgl=col10, Uraian=col11, Masuk=col12, Keluar=col13, Bulan=col14
+  // (deteksi otomatis berdasar header row)
+  let c_no=0,c_blok=1,c_nama=2,c_ket=3;
+  let c_kno=9,c_ktgl=10,c_kur=11,c_km=12,c_kk=13,c_kbln=14;
+
+  // Cari posisi kolom dari header row
+  if (hi >= 0) {
+    const hcols = splitLine(lines[hi]);
+    hcols.forEach((h,i) => {
+      const u = h.replace(/"/g,'').trim().toUpperCase();
+      if (u==='NO'  && i<5)  c_no   = i;
+      if (u==='BLOK')        c_blok = i;
+      if (u==='PEMILIK')     c_nama = i;
+    });
+    c_ket  = c_nama + 1; // 2025 tepat setelah PEMILIK
+    // Cari pengeluaran: NO di kanan
+    for (let i=c_nama+2; i<hcols.length; i++) {
+      const u = hcols[i].replace(/"/g,'').trim().toUpperCase();
+      if (u==='NO') { c_kno=i; c_ktgl=i+1; c_kur=i+2; c_km=i+3; c_kk=i+4; c_kbln=i+5; break; }
+    }
+  }
+
   for (let i = hi + 1; i < lines.length; i++) {
     if (!lines[i].trim()) continue;
     const cols = splitLine(lines[i]);
-    if (cols.length < 5) continue;
+    if (cols.length < c_nama + 1) continue;
 
-    const no     = cols[2] ? cols[2].replace(/"/g,'').trim() : '';
-    const blok   = cols[3] ? cols[3].replace(/"/g,'').trim() : '';
-    const nama   = cols[4] ? cols[4].replace(/"/g,'').trim() : '';
+    const g = (ci) => cols[ci] ? cols[ci].replace(/"/g,'').trim() : '';
+    const no   = g(c_no);
+    const blok = g(c_blok);
+    const nama = g(c_nama);
 
-    // Iuran row: must have blok and nama (not total/header rows)
+    // Iuran row
     const namaUp = nama.toUpperCase();
     if (blok && nama && !isNaN(parseFloat(no)) &&
         !namaUp.includes('TOTAL') && !namaUp.includes('PEMILIK') &&
         !namaUp.includes('BENDAHARA') && !namaUp.includes('URAIAN')) {
-      // Month values
       const months = {};
-      COL_MONTHS.forEach(m => {
-        months[m.key] = cols[m.col] ? cols[m.col].replace(/"/g,'').trim() : '';
-      });
-      // Keterangan lunas (col 11 untuk 2026 atau col 12/13)
-      const keterangan = cols[11] ? cols[11].replace(/"/g,'').trim() : '';
-      allIuran.push({ no, blok, nama, months, keterangan });
+      COL_MONTHS.forEach(m => { months[m.key] = g(m.col); });
+      allIuran.push({ no, blok, nama, months, keterangan: '' });
     }
 
-    // Pengeluaran row: col 17=NO, col 18=Tanggal, col 19=Uraian, col 20=Masuk, col 21=Keluar, col 22=Bulan
-    const noK    = cols[17] ? cols[17].replace(/"/g,'').trim() : '';
-    const tgl    = cols[18] ? cols[18].replace(/"/g,'').trim() : '';
-    const uraian = cols[19] ? cols[19].replace(/"/g,'').trim() : '';
-    const masukK = parseNum(cols[20] || '');
-    const keluarK= parseNum(cols[21] || '');
-    const bulan  = cols[22] ? cols[22].replace(/"/g,'').trim().toUpperCase() : '';
+    // Pengeluaran row
+    const noK    = g(c_kno);
+    const tgl    = g(c_ktgl);
+    const uraian = g(c_kur);
+    const masukK = parseNum(g(c_km));
+    const keluarK= parseNum(g(c_kk));
+    const bulan  = g(c_kbln).toUpperCase();
 
     if (uraian && !uraian.toUpperCase().includes('URAIAN') &&
         !uraian.toUpperCase().includes('PENGELUARAN') &&
@@ -597,37 +612,30 @@ function renderIuran() {
     else if (hasSome) { statusClass='partial'; statusText='Sebagian'; }
     else { statusClass='no'; statusText='Belum'; }
 
-    // Badge untuk kolom 2025 (keterangan saja, bukan dot bulan)
+    // Badge 2025 (keterangan: OK / Agu25 / Nov25 dll)
     const ket2025 = r.months['2025'] || '';
     let badge2025 = '';
     if (ket2025) {
       const isOk2025 = /^ok$/i.test(ket2025.trim());
-      const color = isOk2025 ? 'background:#e6f5ee;color:#0a7c52;border:1px solid #a3d9be'
-                             : 'background:#fff3cd;color:#7a5200;border:1px solid #f0c060';
-      badge2025 = `<span style="display:inline-block;font-size:9px;font-weight:600;padding:2px 7px;border-radius:6px;font-family:DM Mono,monospace;white-space:nowrap;${color}">${ket2025}</span>`;
+      const color = isOk2025
+        ? 'background:#e6f5ee;color:#0a7c52;border:1px solid #a3d9be'
+        : 'background:#fff3cd;color:#7a5200;border:1px solid #f0c060';
+      badge2025 = `<span style="display:inline-block;font-size:9.5px;font-weight:700;padding:2px 8px;border-radius:6px;font-family:'DM Mono',monospace;white-space:nowrap;${color}" title="Status 2025">${ket2025}</span>`;
     }
 
-    const dots = COL_MONTHS.filter(m => m.key !== '2025').map(m => {
-      const v = r.months[m.key];
+    // Dot bulan 2026 saja (JAN-APR)
+    const dots = COL_MONTHS.filter(m => !m.isPrev).map(m => {
+      const isPaidVal = isPaidMonth(r, m.monthIdx);
       let dotClass, title;
-      if (m.isPrev) {
-        // Sep24-Des24: tampilkan abu jika tidak ada, hijau jika ada
-        const isPaidVal = paid(v);
-        dotClass = isPaidVal ? 'ok' : 'prev';
-        title = `${m.key}: ${isPaidVal ? fmtRp(parseNum(v)) : '—'}`;
+      if (isPaidVal) {
+        dotClass = 'ok';
+        title = `${m.key}: Lunas`;
+      } else if (m.monthIdx > currentMonth) {
+        dotClass = 'future';
+        title = `${m.key}: Belum waktunya`;
       } else {
-        // Bulan 2026: pakai isPaidMonth yang cek lunasUntil
-        const isPaidVal = isPaidMonth(r, m.monthIdx);
-        if (isPaidVal) {
-          dotClass = 'ok';
-          title = `${m.key}: Lunas`;
-        } else if (m.monthIdx > currentMonth) {
-          dotClass = 'future';
-          title = `${m.key}: Belum waktunya`;
-        } else {
-          dotClass = 'no';
-          title = `${m.key}: Belum bayar`;
-        }
+        dotClass = 'no';
+        title = `${m.key}: Belum bayar`;
       }
       return `<div class="dot ${dotClass}" title="${title}">${m.label}</div>`;
     }).join('');
@@ -639,15 +647,21 @@ function renderIuran() {
     }, 0);
     totalKas += total2026;
 
-    // Keterangan lunas dari kolom bulan (mis. "Lunas = Desember 2026")
-    const lunasKet = Object.values(r.months).find(v => typeof v === 'string' && /lunas\s*=/i.test(v)) || '';
-    const keterInfo = lunasKet ? `<br><span class="status-pill lunas-info">${lunasKet}</span>` : '';
+    // Keterangan lunas dari nilai kolom bulan (mis. "Lunas = Desember 2026")
+    const lunasKet = Object.values(r.months).find(v => typeof v === 'string' && /lunas/i.test(v)) || '';
+    const keterInfo = lunasKet ? `<span style="font-size:9.5px;background:#e8f4ff;color:#1a5fa8;padding:2px 7px;border-radius:5px;border:1px solid #b8d8f8;font-weight:500;white-space:nowrap">${lunasKet}</span>` : '';
 
     return `<tr>
       <td class="no-cell">${r.no}</td>
       <td><span class="blok-tag">${r.blok}</span></td>
-      <td class="nama-cell">${r.nama}${keterInfo}</td>
-      <td><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">${badge2025}<div class="dots">${dots}</div></div></td>
+      <td class="nama-cell">${r.nama}</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          ${badge2025}
+          <div class="dots">${dots}</div>
+          ${keterInfo}
+        </div>
+      </td>
       <td class="total-cell">${total2026 > 0 ? fmtRp(total2026) : '—'}</td>
       <td style="text-align:center"><span class="status-pill ${statusClass}">${statusText}</span></td>
     </tr>`;
