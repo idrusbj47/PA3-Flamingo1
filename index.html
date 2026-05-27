@@ -351,18 +351,18 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
 const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQhPHh5EYrI9zxDYg1qsFbEWxedCFYk8XPQbQ0m4wTT6EIGIzc3MpHZ5_bCAL2yb6saBqz33QxPaxFr/pub?gid=183782417&single=true&output=csv';
 // ══════════════════════════════════════════════════════════════
 
-// Layout CSV GSheet 2026 (tanpa kolom 2024):
-// col0=NO, col1=BLOK, col2=PEMILIK, col3=Tunggakan2025, col4=JAN, col5=FEB, col6=MAR, col7=APR
-// Pengeluaran sisi kanan: col9=NO, col10=Tgl, col11=Uraian, col12=Masuk, col13=Keluar, col14=Bulan
-const COL_IURAN = { no:0, blok:1, nama:2, ket:3 };
+// Posisi kolom CSV (confirmed dari file CSV asli):
+// col2=NO, col3=BLOK, col4=PEMILIK, col5=Ket2025, col6=JAN, col7=FEB, col8=MAR, col9=APR
+// Pengeluaran: col12=NO, col13=Tgl, col14=Uraian, col15=Masuk, col16=Keluar, col17=Bulan
+const COL_IURAN = { no:2, blok:3, nama:4, ket:5 };
 const COL_MONTHS = [
-  { col: 3,  key: '2025',  label: 'Tunggakan', isPrev: true                },
-  { col: 4,  key: 'JAN',   label: 'J',          isPrev: false, monthIdx: 0 },
-  { col: 5,  key: 'FEB',   label: 'F',          isPrev: false, monthIdx: 1 },
-  { col: 6,  key: 'MAR',   label: 'M',          isPrev: false, monthIdx: 2 },
-  { col: 7,  key: 'APR',   label: 'A',          isPrev: false, monthIdx: 3 },
+  { col: 5,  key: '2025',  label: 'Tunggakan', isPrev: true                },
+  { col: 6,  key: 'JAN',   label: 'J',          isPrev: false, monthIdx: 0 },
+  { col: 7,  key: 'FEB',   label: 'F',          isPrev: false, monthIdx: 1 },
+  { col: 8,  key: 'MAR',   label: 'M',          isPrev: false, monthIdx: 2 },
+  { col: 9,  key: 'APR',   label: 'A',          isPrev: false, monthIdx: 3 },
 ];
-const COL_K = { no:9, tgl:10, uraian:11, masuk:12, keluar:13, bulan:14 };
+const COL_K = { no:13, tgl:14, uraian:15, masuk:16, keluar:17, bulan:18 };
 const MN2026 = ['JAN','FEB','MAR','APR']; // bulan 2026 yang ada di sheet
 const MN2026_FULL = ['Januari','Februari','Maret','April'];
 const MK_PENGELUARAN = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
@@ -375,7 +375,15 @@ let activeMonth = null, activeMonthK = null;
 // ── HELPERS ──
 function parseNum(v) {
   if (v === null || v === undefined || v === '') return 0;
-  const s = v.toString().replace(/"/g,'').replace(/Rp/gi,'').replace(/\./g,'').replace(/,/g,'').trim();
+  let s = v.toString().replace(/"/g,'').replace(/Rp/gi,'').trim();
+  // Handle format "2,166,619" (EN comma thousands) atau "2.166.619" (ID dot thousands)
+  // Jika ada titik dan koma, titik = ribuan, koma = desimal (ID format)
+  // Jika hanya koma tanpa titik, koma = ribuan (EN format)
+  if (s.includes(',') && !s.includes('.')) {
+    s = s.replace(/,/g, ''); // EN: 120,000 → 120000
+  } else {
+    s = s.replace(/\./g,'').replace(/,/g,''); // ID: 1.200.000 → 1200000
+  }
   const n = parseFloat(s);
   return isNaN(n) ? 0 : n;
 }
@@ -428,10 +436,20 @@ function splitLine(line) {
   r.push(cur.trim());
   return r;
 }
-function excelDateStr(serial) {
-  if (!serial || isNaN(serial)) return '—';
-  const d = new Date(Math.round((parseFloat(serial) - 25569) * 86400000));
-  return d.toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'});
+function excelDateStr(v) {
+  if (!v) return '—';
+  // Coba parse string tanggal langsung (format: "31-Dec-25", "07-Feb-26" dll)
+  const d = new Date(v);
+  if (!isNaN(d.getTime())) {
+    return d.toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'});
+  }
+  // Fallback: serial Excel
+  const serial = parseFloat(v);
+  if (!isNaN(serial) && serial > 40000) {
+    const d2 = new Date(Math.round((serial - 25569) * 86400000));
+    return d2.toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'});
+  }
+  return v; // tampilkan apa adanya
 }
 
 // ── PARSE CSV ──
@@ -440,39 +458,37 @@ function parseCSV(text) {
   allIuran = []; allKeluar = [];
   let masukTotal=0, keluarTotal=0, sisaTotal=0;
 
-  // Find header row (contains NO, BLOK, PEMILIK)
+  // Deteksi baris header: cari PEMILIK dan BLOK
+  // (CSV dari GSheet bisa punya multiline cell, header mungkin terpecah)
   let hi = -1;
   for (let i = 0; i < Math.min(15, lines.length); i++) {
     const up = lines[i].toUpperCase();
-    if (up.includes('PEMILIK') && up.includes('BLOK') && up.includes('NO')) { hi = i; break; }
+    if (up.includes('PEMILIK') && up.includes('BLOK')) { hi = i; break; }
   }
-  if (hi < 0) hi = 6;
+  // Cari juga baris TOTAL MASUK / BULAN sebagai anchor data start
+  let dataStart = hi + 1;
+  for (let i = hi; i < Math.min(hi + 5, lines.length); i++) {
+    if (lines[i].toUpperCase().includes('TOTAL MASUK')) { dataStart = i + 1; break; }
+  }
 
-  // Baca summary: MASUK> [nilai] KELUAR> [nilai] bisa 1 baris atau 2 baris
-  // Format GSheet: "MASUK>,Rp2166619,KELUAR>,Rp245500" atau terpisah per baris
-  for (let i = 0; i < Math.min(hi + 1, lines.length); i++) {
-    const up  = lines[i].toUpperCase();
+  // Baca summary dari baris-baris awal sebelum header data
+  // Format CSV: ",,,,MASUK>,,Rp2166619,KELUAR>,Rp245500"
+  // Format CSV: ",,,,SISA =,,Rp1921119"
+  for (let i = 0; i < Math.min(10, lines.length); i++) {
+    const up   = lines[i].toUpperCase();
     const cols = splitLine(lines[i]);
-    // Baris yang mengandung MASUK> — ambil angka setelah itu, lalu KELUAR> angka setelahnya
-    if (up.includes('MASUK>') || (up.includes('MASUK') && up.includes('KELUAR'))) {
-      let foundMasuk = false;
-      let foundKeluar = false;
-      for (let c = 0; c < cols.length; c++) {
-        const cu = cols[c].replace(/"/g,'').trim().toUpperCase();
-        if (cu.includes('MASUK')) { foundMasuk = true; foundKeluar = false; continue; }
-        if (cu.includes('KELUAR')) { foundKeluar = true; foundMasuk = false; continue; }
-        const v = parseNum(cols[c]);
-        if (v > 1000 && foundMasuk && masukTotal === 0)  { masukTotal = v; foundMasuk = false; }
-        if (v > 1000 && foundKeluar && keluarTotal === 0) { keluarTotal = v; foundKeluar = false; }
-      }
-    }
-    if ((up.includes('SISA') || up.includes('SALDO')) && !up.includes('PEMILIK')) {
-      let foundSisa = false;
-      for (let c = 0; c < cols.length; c++) {
-        const cu = cols[c].replace(/"/g,'').trim().toUpperCase();
-        if (cu.includes('SISA') || cu.includes('SALDO')) { foundSisa = true; continue; }
-        const v = parseNum(cols[c]);
-        if (v > 1000 && foundSisa && sisaTotal === 0) { sisaTotal = v; foundSisa = false; }
+    if (!up.includes('MASUK') && !up.includes('SISA')) continue;
+    let nextIsMasuk = false, nextIsKeluar = false, nextIsSisa = false;
+    for (let c = 0; c < cols.length; c++) {
+      const cu = cols[c].replace(/"/g,'').replace(/\s/g,'').toUpperCase();
+      if (cu === 'MASUK>') { nextIsMasuk = true; continue; }
+      if (cu === 'KELUAR>') { nextIsKeluar = true; nextIsMasuk = false; continue; }
+      if (cu === 'SISA=' || cu === 'SISA') { nextIsSisa = true; continue; }
+      const v = parseNum(cols[c]);
+      if (v > 1000) {
+        if (nextIsMasuk  && masukTotal  === 0) { masukTotal  = v; nextIsMasuk  = false; }
+        if (nextIsKeluar && keluarTotal === 0) { keluarTotal = v; nextIsKeluar = false; }
+        if (nextIsSisa   && sisaTotal   === 0) { sisaTotal   = v; nextIsSisa   = false; }
       }
     }
   }
@@ -480,18 +496,30 @@ function parseCSV(text) {
 
   const g = (cols, ci) => (cols[ci] || '').replace(/"/g,'').trim();
 
-  for (let i = hi + 1; i < lines.length; i++) {
+  // Pre-process: gabung baris multiline (akibat newline dalam cell CSV)
+  // Baris valid diawali dengan ",," (2 koma pertama kosong)
+  const cleanLines = [];
+  for (let i = dataStart; i < lines.length; i++) {
     if (!lines[i].trim()) continue;
-    const cols = splitLine(lines[i]);
-    if (cols.length < 3) continue;
+    // Baris data valid: diawali ",," dan kolom ke-2 ada isinya
+    if (lines[i].startsWith(',,') || lines[i].startsWith('"')) {
+      cleanLines.push(lines[i]);
+    }
+    // Skip baris lain (sisa multiline header dll)
+  }
+
+  for (const line of cleanLines) {
+    const cols = splitLine(line);
+    if (cols.length < 5) continue;
 
     const no   = g(cols, COL_IURAN.no);
     const blok = g(cols, COL_IURAN.blok);
     const nama = g(cols, COL_IURAN.nama);
 
-    // ── Iuran row: NO numerik, ada BLOK dan NAMA ──
+    // ── Iuran row: NO numerik, ada BLOK ──
     const namaUp = nama.toUpperCase();
-    if (blok && nama && !isNaN(parseFloat(no)) && parseFloat(no) > 0 &&
+    if (blok && !isNaN(parseFloat(no)) && parseFloat(no) > 0 &&
+        !blok.toUpperCase().includes('TOTAL') &&
         !namaUp.includes('TOTAL') && !namaUp.includes('PEMILIK') &&
         !namaUp.includes('BENDAHARA') && !namaUp.includes('URAIAN')) {
       const months = {};
@@ -499,20 +527,20 @@ function parseCSV(text) {
       allIuran.push({ no, blok, nama, months });
     }
 
-    // ── Pengeluaran row: kolom kanan ──
-    const noK    = g(cols, COL_K.no);
+    // ── Pengeluaran row: ada tanggal dan uraian di kolom kanan ──
     const tgl    = g(cols, COL_K.tgl);
     const uraian = g(cols, COL_K.uraian);
     const masukK = parseNum(g(cols, COL_K.masuk));
     const keluarK= parseNum(g(cols, COL_K.keluar));
-    const bulan  = g(cols, COL_K.bulan).toUpperCase();
+    const bulan  = g(cols, COL_K.bulan).toUpperCase().trim();
 
     const uraianUp = uraian.toUpperCase();
-    if (uraian && !uraianUp.includes('URAIAN') &&
+    if (tgl && uraian &&
+        !uraianUp.includes('URAIAN') &&
         !uraianUp.includes('PENGELUARAN') &&
         !uraianUp.includes('BENDAHARA') &&
         (masukK > 0 || keluarK > 0)) {
-      allKeluar.push({ no: noK, tgl, uraian, masuk: masukK, keluar: keluarK, bulan });
+      allKeluar.push({ no: g(cols, COL_K.no), tgl, uraian, masuk: masukK, keluar: keluarK, bulan });
     }
   }
 
@@ -675,10 +703,7 @@ function renderKeluar() {
 
   const rows = list.map(r => {
     totalM += r.masuk; totalK += r.keluar;
-    let tglStr = '—';
-    const tglNum = parseFloat(r.tgl);
-    if (!isNaN(tglNum) && tglNum > 40000) { try { tglStr = excelDateStr(tglNum); } catch(e){} }
-    else if (r.tgl) tglStr = r.tgl;
+    const tglStr = r.tgl ? excelDateStr(r.tgl) : '—';
 
     let sep = '';
     if (r.bulan && r.bulan !== lastBulan) {
