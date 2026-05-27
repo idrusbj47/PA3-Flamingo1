@@ -292,7 +292,7 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
               <th style="width:36px">No</th>
               <th style="width:72px">Blok</th>
               <th>Pemilik</th>
-              <th>'25 · Jan · Feb · Mar · Apr</th>
+              <th>Tunggakan Thn. Lalu · Jan · Feb · Mar · Apr</th>
               <th style="text-align:right;width:90px">Total 2026</th>
               <th style="text-align:center;width:80px">Status</th>
             </tr>
@@ -351,16 +351,18 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
 const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQhPHh5EYrI9zxDYg1qsFbEWxedCFYk8XPQbQ0m4wTT6EIGIzc3MpHZ5_bCAL2yb6saBqz33QxPaxFr/pub?gid=183782417&single=true&output=csv';
 // ══════════════════════════════════════════════════════════════
 
-// Layout CSV baru (kolom 2024 sudah dihapus dari sheet):
-// col0=NO, col1=BLOK, col2=PEMILIK, col3=2025(ket), col4=JAN, col5=FEB, col6=MAR, col7=APR
-// col8-11 = kolom pengeluaran kanan (NO,Tanggal,Uraian,Masuk,Keluar,Bulan,Jumlah)
+// Layout CSV GSheet 2026 (tanpa kolom 2024):
+// col0=NO, col1=BLOK, col2=PEMILIK, col3=Tunggakan2025, col4=JAN, col5=FEB, col6=MAR, col7=APR
+// Pengeluaran sisi kanan: col9=NO, col10=Tgl, col11=Uraian, col12=Masuk, col13=Keluar, col14=Bulan
+const COL_IURAN = { no:0, blok:1, nama:2, ket:3 };
 const COL_MONTHS = [
-  { col: 3,  key: '2025',  label: "'25", isPrev: true                   },
-  { col: 4,  key: 'JAN',   label: 'J',   isPrev: false, monthIdx: 0    },
-  { col: 5,  key: 'FEB',   label: 'F',   isPrev: false, monthIdx: 1    },
-  { col: 6,  key: 'MAR',   label: 'M',   isPrev: false, monthIdx: 2    },
-  { col: 7,  key: 'APR',   label: 'A',   isPrev: false, monthIdx: 3    },
+  { col: 3,  key: '2025',  label: 'Tunggakan', isPrev: true                },
+  { col: 4,  key: 'JAN',   label: 'J',          isPrev: false, monthIdx: 0 },
+  { col: 5,  key: 'FEB',   label: 'F',          isPrev: false, monthIdx: 1 },
+  { col: 6,  key: 'MAR',   label: 'M',          isPrev: false, monthIdx: 2 },
+  { col: 7,  key: 'APR',   label: 'A',          isPrev: false, monthIdx: 3 },
 ];
+const COL_K = { no:9, tgl:10, uraian:11, masuk:12, keluar:13, bulan:14 };
 const MN2026 = ['JAN','FEB','MAR','APR']; // bulan 2026 yang ada di sheet
 const MN2026_FULL = ['Januari','Februari','Maret','April'];
 const MK_PENGELUARAN = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
@@ -446,85 +448,69 @@ function parseCSV(text) {
   }
   if (hi < 0) hi = 6;
 
-  // Summary row (MASUK>, KELUAR>, SISA)
-  for (let i = 0; i < Math.min(hi, lines.length); i++) {
-    const up = lines[i].toUpperCase();
+  // Baca summary: MASUK> [nilai] KELUAR> [nilai] bisa 1 baris atau 2 baris
+  // Format GSheet: "MASUK>,Rp2166619,KELUAR>,Rp245500" atau terpisah per baris
+  for (let i = 0; i < Math.min(hi + 1, lines.length); i++) {
+    const up  = lines[i].toUpperCase();
     const cols = splitLine(lines[i]);
-    if (up.includes('MASUK') && !up.includes('PEMILIK')) {
+    // Baris yang mengandung MASUK> — ambil angka setelah itu, lalu KELUAR> angka setelahnya
+    if (up.includes('MASUK>') || (up.includes('MASUK') && up.includes('KELUAR'))) {
+      let foundMasuk = false;
+      let foundKeluar = false;
       for (let c = 0; c < cols.length; c++) {
+        const cu = cols[c].replace(/"/g,'').trim().toUpperCase();
+        if (cu.includes('MASUK')) { foundMasuk = true; foundKeluar = false; continue; }
+        if (cu.includes('KELUAR')) { foundKeluar = true; foundMasuk = false; continue; }
         const v = parseNum(cols[c]);
-        if (v > 100000 && masukTotal === 0) masukTotal = v;
-      }
-    }
-    if (up.includes('KELUAR') && !up.includes('PEMILIK')) {
-      for (let c = 0; c < cols.length; c++) {
-        const v = parseNum(cols[c]);
-        if (v > 1000 && keluarTotal === 0) keluarTotal = v;
+        if (v > 1000 && foundMasuk && masukTotal === 0)  { masukTotal = v; foundMasuk = false; }
+        if (v > 1000 && foundKeluar && keluarTotal === 0) { keluarTotal = v; foundKeluar = false; }
       }
     }
     if ((up.includes('SISA') || up.includes('SALDO')) && !up.includes('PEMILIK')) {
+      let foundSisa = false;
       for (let c = 0; c < cols.length; c++) {
+        const cu = cols[c].replace(/"/g,'').trim().toUpperCase();
+        if (cu.includes('SISA') || cu.includes('SALDO')) { foundSisa = true; continue; }
         const v = parseNum(cols[c]);
-        if (v > 100000 && sisaTotal === 0) sisaTotal = v;
+        if (v > 1000 && foundSisa && sisaTotal === 0) { sisaTotal = v; foundSisa = false; }
       }
     }
   }
   if (sisaTotal === 0 && masukTotal > 0) sisaTotal = masukTotal - keluarTotal;
 
-  // Parse rows — layout baru: NO=col0, BLOK=col1, PEMILIK=col2, 2025=col3, JAN=col4, FEB=col5, MAR=col6, APR=col7
-  // Pengeluaran (sisi kanan sheet): NO=col9, Tgl=col10, Uraian=col11, Masuk=col12, Keluar=col13, Bulan=col14
-  // (deteksi otomatis berdasar header row)
-  let c_no=0,c_blok=1,c_nama=2,c_ket=3;
-  let c_kno=9,c_ktgl=10,c_kur=11,c_km=12,c_kk=13,c_kbln=14;
-
-  // Cari posisi kolom dari header row
-  if (hi >= 0) {
-    const hcols = splitLine(lines[hi]);
-    hcols.forEach((h,i) => {
-      const u = h.replace(/"/g,'').trim().toUpperCase();
-      if (u==='NO'  && i<5)  c_no   = i;
-      if (u==='BLOK')        c_blok = i;
-      if (u==='PEMILIK')     c_nama = i;
-    });
-    c_ket  = c_nama + 1; // 2025 tepat setelah PEMILIK
-    // Cari pengeluaran: NO di kanan
-    for (let i=c_nama+2; i<hcols.length; i++) {
-      const u = hcols[i].replace(/"/g,'').trim().toUpperCase();
-      if (u==='NO') { c_kno=i; c_ktgl=i+1; c_kur=i+2; c_km=i+3; c_kk=i+4; c_kbln=i+5; break; }
-    }
-  }
+  const g = (cols, ci) => (cols[ci] || '').replace(/"/g,'').trim();
 
   for (let i = hi + 1; i < lines.length; i++) {
     if (!lines[i].trim()) continue;
     const cols = splitLine(lines[i]);
-    if (cols.length < c_nama + 1) continue;
+    if (cols.length < 3) continue;
 
-    const g = (ci) => cols[ci] ? cols[ci].replace(/"/g,'').trim() : '';
-    const no   = g(c_no);
-    const blok = g(c_blok);
-    const nama = g(c_nama);
+    const no   = g(cols, COL_IURAN.no);
+    const blok = g(cols, COL_IURAN.blok);
+    const nama = g(cols, COL_IURAN.nama);
 
-    // Iuran row
+    // ── Iuran row: NO numerik, ada BLOK dan NAMA ──
     const namaUp = nama.toUpperCase();
-    if (blok && nama && !isNaN(parseFloat(no)) &&
+    if (blok && nama && !isNaN(parseFloat(no)) && parseFloat(no) > 0 &&
         !namaUp.includes('TOTAL') && !namaUp.includes('PEMILIK') &&
         !namaUp.includes('BENDAHARA') && !namaUp.includes('URAIAN')) {
       const months = {};
-      COL_MONTHS.forEach(m => { months[m.key] = g(m.col); });
-      allIuran.push({ no, blok, nama, months, keterangan: '' });
+      COL_MONTHS.forEach(m => { months[m.key] = g(cols, m.col); });
+      allIuran.push({ no, blok, nama, months });
     }
 
-    // Pengeluaran row
-    const noK    = g(c_kno);
-    const tgl    = g(c_ktgl);
-    const uraian = g(c_kur);
-    const masukK = parseNum(g(c_km));
-    const keluarK= parseNum(g(c_kk));
-    const bulan  = g(c_kbln).toUpperCase();
+    // ── Pengeluaran row: kolom kanan ──
+    const noK    = g(cols, COL_K.no);
+    const tgl    = g(cols, COL_K.tgl);
+    const uraian = g(cols, COL_K.uraian);
+    const masukK = parseNum(g(cols, COL_K.masuk));
+    const keluarK= parseNum(g(cols, COL_K.keluar));
+    const bulan  = g(cols, COL_K.bulan).toUpperCase();
 
-    if (uraian && !uraian.toUpperCase().includes('URAIAN') &&
-        !uraian.toUpperCase().includes('PENGELUARAN') &&
-        !uraian.toUpperCase().includes('BENDAHARA') &&
+    const uraianUp = uraian.toUpperCase();
+    if (uraian && !uraianUp.includes('URAIAN') &&
+        !uraianUp.includes('PENGELUARAN') &&
+        !uraianUp.includes('BENDAHARA') &&
         (masukK > 0 || keluarK > 0)) {
       allKeluar.push({ no: noK, tgl, uraian, masuk: masukK, keluar: keluarK, bulan });
     }
@@ -620,7 +606,7 @@ function renderIuran() {
       const color = isOk2025
         ? 'background:#e6f5ee;color:#0a7c52;border:1px solid #a3d9be'
         : 'background:#fff3cd;color:#7a5200;border:1px solid #f0c060';
-      badge2025 = `<span style="display:inline-block;font-size:9.5px;font-weight:700;padding:2px 8px;border-radius:6px;font-family:'DM Mono',monospace;white-space:nowrap;${color}" title="Status 2025">${ket2025}</span>`;
+      badge2025 = `<span style="display:inline-block;font-size:9.5px;font-weight:700;padding:2px 8px;border-radius:6px;font-family:'DM Mono',monospace;white-space:nowrap;${color}" title="Tunggakan / Status Tahun Lalu">${ket2025}</span>`;
     }
 
     // Dot bulan 2026 saja (JAN-APR)
