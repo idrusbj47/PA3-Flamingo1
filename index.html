@@ -87,8 +87,9 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
 
 /* TABS */
 .tab-bar{display:flex;gap:4px;margin-bottom:1.25rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:4px}
-.tab-btn{flex:1;padding:0 16px;height:34px;border-radius:var(--radius);border:none;background:transparent;font-size:13px;font-family:inherit;font-weight:500;color:var(--text2);cursor:pointer;transition:all .15s}
+.tab-btn{flex:1;padding:6px 12px;min-height:40px;height:auto;line-height:1.3;border-radius:var(--radius);border:none;background:transparent;font-size:13px;font-family:inherit;font-weight:500;color:var(--text2);cursor:pointer;transition:all .15s;white-space:normal;text-align:center}
 .tab-btn.active{background:var(--green);color:#fff;box-shadow:0 1px 4px rgba(10,124,82,.25)}
+@media(max-width:480px){.tab-btn{font-size:12px;padding:7px 8px}}
 
 /* MONTH PILLS */
 .month-section{margin-bottom:1.25rem}
@@ -202,7 +203,7 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
   <div class="nav-section">Laporan Tahunan</div>
   <a class="nav-item" href="kas 2024.html"><span class="nav-icon">📅</span> Laporan 2024</a>
   <a class="nav-item" href="kas 2025.html"><span class="nav-icon">📅</span> Laporan 2025</a>
-  <a class="nav-item active" href="kas 2026.html"><span class="nav-icon">📅</span> Laporan 2026</a>
+  <a class="nav-item" href="kas 2026.html"><span class="nav-icon">📅</span> Laporan 2026</a>
 </nav>
 
 <div class="container">
@@ -269,7 +270,7 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
 
     <!-- TABS -->
     <div class="tab-bar">
-      <button class="tab-btn active" id="tab-iuran" onclick="switchTab('iuran')">📋 Iuran Anggota</button>
+      <button class="tab-btn active" id="tab-iuran" onclick="switchTab('iuran')">📋 Iuran Anggota (Rp. 10.000/Bulan) </button>
       <button class="tab-btn" id="tab-keluar" onclick="switchTab('keluar')">📤 Pengeluaran</button>
     </div>
 
@@ -436,19 +437,55 @@ function splitLine(line) {
   r.push(cur.trim());
   return r;
 }
+// Map nama bulan Indonesia/singkatan → index 0-based
+const BULAN_IDX = {
+  'jan':0,'januari':0,'feb':1,'februari':1,'mar':2,'maret':2,
+  'apr':3,'april':3,'mei':4,'may':4,'jun':5,'juni':5,
+  'jul':6,'juli':6,'agu':7,'agust':7,'agustus':7,'aug':7,
+  'sep':8,'sept':8,'september':8,'okt':9,'okt':9,'oktober':9,'oct':9,
+  'nov':10,'november':10,'des':11,'desember':11,'dec':11
+};
+
+// Parse tanggal dari berbagai format → Date object atau null
+function parseTgl(v) {
+  if (!v) return null;
+  const s = v.toString().trim();
+
+  // Format: "05-Mei-26", "07-Feb-26", "31-Dec-25" (dd-Mon-yy atau dd-Mon-yyyy)
+  const m1 = s.match(/^(\d{1,2})[-\/\s]([a-zA-Z]+)[-\/\s](\d{2,4})$/);
+  if (m1) {
+    const day = parseInt(m1[1]);
+    const monIdx = BULAN_IDX[m1[2].toLowerCase()];
+    let year = parseInt(m1[3]);
+    if (year < 100) year += 2000;
+    if (monIdx !== undefined) return new Date(year, monIdx, day);
+  }
+
+  // Format: "31 Jan 2026", "07 Feb 2026"
+  const m2 = s.match(/^(\d{1,2})\s+([a-zA-Z]+)\s+(\d{4})$/);
+  if (m2) {
+    const day = parseInt(m2[1]);
+    const monIdx = BULAN_IDX[m2[2].toLowerCase()];
+    const year = parseInt(m2[3]);
+    if (monIdx !== undefined) return new Date(year, monIdx, day);
+  }
+
+  // Coba native Date (untuk format EN seperti "2026-01-31")
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) return d;
+
+  // Fallback: serial Excel
+  const serial = parseFloat(s);
+  if (!isNaN(serial) && serial > 40000) {
+    return new Date(Math.round((serial - 25569) * 86400000));
+  }
+  return null;
+}
+
 function excelDateStr(v) {
   if (!v) return '—';
-  // Coba parse string tanggal langsung (format: "31-Dec-25", "07-Feb-26" dll)
-  const d = new Date(v);
-  if (!isNaN(d.getTime())) {
-    return d.toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'});
-  }
-  // Fallback: serial Excel
-  const serial = parseFloat(v);
-  if (!isNaN(serial) && serial > 40000) {
-    const d2 = new Date(Math.round((serial - 25569) * 86400000));
-    return d2.toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'});
-  }
+  const d = parseTgl(v);
+  if (d) return d.toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'});
   return v; // tampilkan apa adanya
 }
 
@@ -698,19 +735,48 @@ function renderKeluar() {
     return mq && mf && mb;
   });
 
+  // Sort berdasarkan tanggal agar divider bulan tampil urut
+  list.sort((a, b) => {
+    const toMs = (tgl) => { const d = parseTgl(tgl); return d ? d.getTime() : 0; };
+    return toMs(a.tgl) - toMs(b.tgl);
+  });
+
   let totalM = 0, totalK = 0;
-  let lastBulan = '';
+  let lastBulanGroup = '';
+
+  // Helper: ambil bulan dari string tanggal transaksi (prioritas dari tgl, fallback ke r.bulan)
+  function getBulanGroup(r) {
+    if (r.tgl) {
+      const d = parseTgl(r.tgl);
+      if (d) {
+        return d.getFullYear() + '-' + String(d.getMonth()).padStart(2,'0') + '|' + d.getMonth() + '|' + d.getFullYear();
+      }
+    }
+    // Fallback ke kolom bulan
+    return r.bulan || '';
+  }
 
   const rows = list.map(r => {
     totalM += r.masuk; totalK += r.keluar;
     const tglStr = r.tgl ? excelDateStr(r.tgl) : '—';
 
+    const bulanGroup = getBulanGroup(r);
     let sep = '';
-    if (r.bulan && r.bulan !== lastBulan) {
-      lastBulan = r.bulan;
-      const idx = MK_PENGELUARAN.indexOf(r.bulan);
-      const label = idx >= 0 ? MN_FULL[idx] : r.bulan;
-      sep = `<tr class="bulan-divider"><td colspan="5"><span class="bulan-label">📅 ${label} 2026</span></td></tr>`;
+    if (bulanGroup && bulanGroup !== lastBulanGroup) {
+      lastBulanGroup = bulanGroup;
+      let label;
+      // Cek apakah format baru "key|monthIdx|year"
+      const parts = bulanGroup.split('|');
+      if (parts.length === 3) {
+        const monthIdx = parseInt(parts[1]);
+        const year = parts[2];
+        const MN_ID = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+        label = (MN_ID[monthIdx] || '') + ' ' + year;
+      } else {
+        const idx = MK_PENGELUARAN.indexOf(bulanGroup);
+        label = (idx >= 0 ? MN_FULL[idx] : bulanGroup) + ' 2026';
+      }
+      sep = `<tr class="bulan-divider"><td colspan="5"><span class="bulan-label">📅 ${label}</span></td></tr>`;
     }
     return sep + `<tr>
       <td class="no-cell">${r.no || '—'}</td>
@@ -788,6 +854,19 @@ async function init() {
 init();
 function toggleNav(){document.getElementById('nav-drawer').classList.toggle('open');document.getElementById('nav-overlay').classList.toggle('open');document.getElementById('ham-btn').classList.toggle('open')}
 function closeNav(){document.getElementById('nav-drawer').classList.remove('open');document.getElementById('nav-overlay').classList.remove('open');document.getElementById('ham-btn').classList.remove('open')}
+
+// Tandai nav-item aktif berdasarkan nama file halaman yang sedang dibuka
+(function(){
+  const current = window.location.pathname.split('/').pop().toLowerCase().replace(/\s/g,'');
+  document.querySelectorAll('.nav-item').forEach(function(el){
+    const href = (el.getAttribute('href') || '').toLowerCase().replace(/\s/g,'');
+    if (href && current && href === current) {
+      el.classList.add('active');
+    } else {
+      el.classList.remove('active');
+    }
+  });
+})();
 </script>
 </body>
 </html>
