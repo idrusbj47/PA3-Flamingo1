@@ -32,23 +32,122 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
 .last-update{font-size:11px;color:var(--text3);font-family:'DM Mono',monospace}
 
 /* HAMBURGER */
-.ham-btn{display:flex;flex-direction:column;justify-content:center;gap:5px;width:36px;height:36px;border:1px solid var(--border2);border-radius:var(--radius);background:var(--surface);cursor:pointer;padding:0 8px;flex-shrink:0}
-.ham-btn span{display:block;height:2px;background:var(--text2);border-radius:2px;transition:all .25s}
+.ham-btn{
+  display:flex;flex-direction:column;justify-content:center;gap:5px;
+  width:36px;height:36px;border-radius:var(--radius);cursor:pointer;padding:0 8px;flex-shrink:0;
+  border:1px solid rgba(29,168,118,0.25);
+  background:rgba(10,124,82,0.08);
+  transition:background .2s,border-color .2s;
+}
+.ham-btn:hover{background:rgba(10,124,82,0.16);border-color:rgba(29,168,118,0.45)}
+.ham-btn span{display:block;height:2px;background:var(--green);border-radius:2px;transition:all .28s cubic-bezier(.4,0,.2,1)}
 .ham-btn.open span:nth-child(1){transform:translateY(7px) rotate(45deg)}
-.ham-btn.open span:nth-child(2){opacity:0}
+.ham-btn.open span:nth-child(2){opacity:0;transform:scaleX(0)}
 .ham-btn.open span:nth-child(3){transform:translateY(-7px) rotate(-45deg)}
-.nav-drawer{position:fixed;top:0;left:0;height:100vh;width:260px;background:var(--surface);border-right:1px solid var(--border);z-index:999;transform:translateX(-100%);transition:transform .28s ease;box-shadow:4px 0 24px rgba(0,0,0,0.08)}
-.nav-drawer.open{transform:translateX(0)}
-.nav-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.25);z-index:998;opacity:0;pointer-events:none;transition:opacity .28s}
+
+/* NAV OVERLAY */
+.nav-overlay{
+  position:fixed;inset:0;z-index:998;
+  opacity:0;pointer-events:none;transition:opacity .32s;
+  background:rgba(7,26,16,0.6);
+  backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
+}
 .nav-overlay.open{opacity:1;pointer-events:all}
-.nav-header{padding:1.25rem 1.25rem 1rem;border-bottom:1px solid var(--border)}
-.nav-header h2{font-size:14px;font-weight:600}
-.nav-header p{font-size:11px;color:var(--text3);margin-top:2px}
-.nav-section{padding:.75rem 1rem .25rem;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);font-weight:500}
-.nav-item{display:flex;align-items:center;gap:10px;padding:.65rem 1.25rem;font-size:13.5px;color:var(--text);text-decoration:none;font-weight:500;transition:background .15s;border-left:3px solid transparent}
-.nav-item:hover{background:var(--bg)}
-.nav-item.active{background:var(--green-bg);color:var(--green);border-left-color:var(--green)}
-.nav-item .nav-icon{font-size:16px;width:20px;text-align:center}
+
+/* NAV DRAWER */
+.nav-drawer{
+  position:fixed;top:0;left:0;height:100vh;width:280px;z-index:999;
+  transform:translateX(-100%);
+  transition:transform .32s cubic-bezier(.4,0,.2,1);
+  background:linear-gradient(160deg,#0d2318 0%,#071a10 60%,#0a2010 100%);
+  border-right:1px solid rgba(29,168,118,0.18);
+  box-shadow:8px 0 48px rgba(0,0,0,0.5);
+  display:flex;flex-direction:column;
+  overflow:hidden;
+}
+.nav-drawer::before{
+  content:'';position:absolute;top:-80px;right:-60px;
+  width:240px;height:240px;border-radius:50%;pointer-events:none;
+  background:radial-gradient(circle,rgba(29,168,118,0.18),transparent 70%);
+}
+.nav-drawer::after{
+  content:'';position:absolute;bottom:-60px;left:-40px;
+  width:180px;height:180px;border-radius:50%;pointer-events:none;
+  background:radial-gradient(circle,rgba(10,92,58,0.25),transparent 70%);
+}
+.nav-drawer.open{transform:translateX(0)}
+
+/* NAV HEADER */
+.nav-header{
+  padding:1.5rem 1.25rem 1.25rem;
+  border-bottom:1px solid rgba(29,168,118,0.15);
+  position:relative;z-index:1;
+  display:flex;align-items:center;gap:12px;
+}
+.nav-logo{
+  width:42px;height:42px;border-radius:50%;flex-shrink:0;
+  overflow:hidden;
+  border:1.5px solid rgba(29,168,118,0.35);
+  box-shadow:0 0 12px rgba(29,168,118,0.2);
+}
+.nav-logo img{width:100%;height:100%;object-fit:cover}
+.nav-header-text h2{font-size:14px;font-weight:700;color:#e8f5ee;line-height:1.2}
+.nav-header-text p{font-size:10.5px;color:rgba(168,240,212,0.5);margin-top:2px;font-family:'DM Mono',monospace}
+
+/* NAV SECTION LABEL */
+.nav-section{
+  padding:.9rem 1.25rem .35rem;
+  font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;
+  color:rgba(77,212,160,0.45);font-weight:600;
+  font-family:'DM Mono',monospace;
+  position:relative;z-index:1;
+}
+
+/* NAV ITEMS */
+.nav-item{
+  display:flex;align-items:center;gap:12px;
+  padding:.7rem 1.25rem;
+  font-size:13.5px;color:rgba(232,245,238,0.75);
+  text-decoration:none;font-weight:500;
+  transition:all .18s ease;
+  border-left:2px solid transparent;
+  position:relative;z-index:1;
+  margin:1px 8px;border-radius:10px;
+}
+.nav-item::before{
+  content:'';position:absolute;inset:0;border-radius:10px;
+  background:rgba(29,168,118,0);transition:background .18s;
+}
+.nav-item:hover::before{background:rgba(29,168,118,0.1)}
+.nav-item:hover{color:#e8f5ee;border-left-color:rgba(29,168,118,0.4)}
+.nav-item.active{
+  color:#4dd4a0;border-left-color:#1da876;
+  background:rgba(29,168,118,0.12);
+}
+.nav-item.active::before{background:transparent}
+.nav-item .nav-icon{
+  font-size:15px;width:32px;height:32px;border-radius:8px;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+  background:rgba(255,255,255,0.05);
+  border:1px solid rgba(255,255,255,0.07);
+  transition:background .18s,border-color .18s;
+}
+.nav-item:hover .nav-icon{background:rgba(29,168,118,0.15);border-color:rgba(29,168,118,0.25)}
+.nav-item.active .nav-icon{background:rgba(29,168,118,0.2);border-color:rgba(29,168,118,0.35)}
+.nav-item-arrow{margin-left:auto;font-size:14px;color:rgba(77,212,160,0.3);transition:transform .18s,color .18s}
+.nav-item:hover .nav-item-arrow{transform:translateX(3px);color:rgba(77,212,160,0.7)}
+.nav-item.active .nav-item-arrow{color:#4dd4a0}
+
+/* NAV DIVIDER */
+.nav-divider{height:1px;background:rgba(29,168,118,0.1);margin:.5rem 1.25rem}
+
+/* NAV FOOTER */
+.nav-footer{
+  margin-top:auto;padding:1rem 1.25rem 1.5rem;
+  border-top:1px solid rgba(29,168,118,0.1);
+  position:relative;z-index:1;
+}
+.nav-footer p{font-size:10px;color:rgba(168,240,212,0.3);font-family:'DM Mono',monospace;letter-spacing:.04em}
 
 /* LAYOUT */
 .container{max-width:1200px;margin:0 auto;padding:1.5rem}
@@ -197,13 +296,44 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
 <div class="nav-overlay" id="nav-overlay" onclick="closeNav()"></div>
 <nav class="nav-drawer" id="nav-drawer">
   <div class="nav-header">
-    <h2>Kas Blok B3-C1</h2>
-    <p>Bapak-Bapak Blok B3 &amp; C1</p>
+    <div class="nav-logo">
+      <img src="Logo Fmg1.png" alt="Logo" onerror="this.style.display='none';this.parentElement.textContent='🦩'"/>
+    </div>
+    <div class="nav-header-text">
+      <h2>Flamingo 1 B3–C1</h2>
+      <p>Puri Asri 3 · Bekasi</p>
+    </div>
   </div>
+
+  <div class="nav-section">Menu Utama</div>
+  <a class="nav-item" href="index.html">
+    <span class="nav-icon">🏠</span>
+    Beranda
+    <span class="nav-item-arrow">›</span>
+  </a>
+
+  <div class="nav-divider"></div>
   <div class="nav-section">Laporan Tahunan</div>
-  <a class="nav-item" href="kas 2024.html"><span class="nav-icon">📅</span> Laporan 2024</a>
-  <a class="nav-item" href="kas 2025.html"><span class="nav-icon">📅</span> Laporan 2025</a>
-  <a class="nav-item" href="kas 2026.html"><span class="nav-icon">📅</span> Laporan 2026</a>
+
+  <a class="nav-item" href="kas 2024.html">
+    <span class="nav-icon">📅</span>
+    Laporan 2024
+    <span class="nav-item-arrow">›</span>
+  </a>
+  <a class="nav-item" href="kas 2025.html">
+    <span class="nav-icon">📅</span>
+    Laporan 2025
+    <span class="nav-item-arrow">›</span>
+  </a>
+  <a class="nav-item" href="kas 2026.html">
+    <span class="nav-icon">🗓️</span>
+    Laporan 2026
+    <span class="nav-item-arrow">›</span>
+  </a>
+
+  <div class="nav-footer">
+    <p>© Kas Flamingo 1 B3–C1</p>
+  </div>
 </nav>
 
 <div class="container">
@@ -847,7 +977,8 @@ function closeNav(){document.getElementById('nav-drawer').classList.remove('open
 
 // Tandai nav-item aktif berdasarkan nama file halaman yang sedang dibuka
 (function(){
-  const current = window.location.pathname.split('/').pop().toLowerCase().replace(/\s/g,'');
+  let current = window.location.pathname.split('/').pop().toLowerCase().replace(/\s/g,'');
+  if(current === '' || current === '/') current = 'index.html';
   document.querySelectorAll('.nav-item').forEach(function(el){
     const href = (el.getAttribute('href') || '').toLowerCase().replace(/\s/g,'');
     if (href && current && href === current) {
