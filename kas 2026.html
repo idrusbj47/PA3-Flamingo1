@@ -202,7 +202,7 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
   <div class="nav-section">Laporan Tahunan</div>
   <a class="nav-item" href="kas 2024.html"><span class="nav-icon">📅</span> Laporan 2024</a>
   <a class="nav-item" href="kas 2025.html"><span class="nav-icon">📅</span> Laporan 2025</a>
-  <a class="nav-item active" href="kas 2026.html"><span class="nav-icon">📅</span> Laporan 2026</a>
+  <a class="nav-item" href="kas 2026.html"><span class="nav-icon">📅</span> Laporan 2026</a>
 </nav>
 
 <div class="container">
@@ -698,19 +698,60 @@ function renderKeluar() {
     return mq && mf && mb;
   });
 
+  // Sort berdasarkan tanggal agar divider bulan tampil urut
+  list.sort((a, b) => {
+    const toMs = (tgl) => {
+      if (!tgl) return 0;
+      const d = new Date(tgl); if (!isNaN(d.getTime())) return d.getTime();
+      const s = parseFloat(tgl); if (!isNaN(s) && s > 40000) return Math.round((s - 25569) * 86400000);
+      return 0;
+    };
+    return toMs(a.tgl) - toMs(b.tgl);
+  });
+
   let totalM = 0, totalK = 0;
-  let lastBulan = '';
+  let lastBulanGroup = '';
+
+  // Helper: ambil bulan dari string tanggal transaksi (prioritas dari tgl, fallback ke r.bulan)
+  function getBulanGroup(r) {
+    if (r.tgl) {
+      const d = new Date(r.tgl);
+      if (!isNaN(d.getTime())) {
+        // Gunakan tahun+bulan sebagai group key, misal "2026-01"
+        return d.getFullYear() + '-' + String(d.getMonth()).padStart(2,'0') + '|' + d.getMonth() + '|' + d.getFullYear();
+      }
+      // Coba serial Excel
+      const serial = parseFloat(r.tgl);
+      if (!isNaN(serial) && serial > 40000) {
+        const d2 = new Date(Math.round((serial - 25569) * 86400000));
+        return d2.getFullYear() + '-' + String(d2.getMonth()).padStart(2,'0') + '|' + d2.getMonth() + '|' + d2.getFullYear();
+      }
+    }
+    // Fallback ke kolom bulan
+    return r.bulan || '';
+  }
 
   const rows = list.map(r => {
     totalM += r.masuk; totalK += r.keluar;
     const tglStr = r.tgl ? excelDateStr(r.tgl) : '—';
 
+    const bulanGroup = getBulanGroup(r);
     let sep = '';
-    if (r.bulan && r.bulan !== lastBulan) {
-      lastBulan = r.bulan;
-      const idx = MK_PENGELUARAN.indexOf(r.bulan);
-      const label = idx >= 0 ? MN_FULL[idx] : r.bulan;
-      sep = `<tr class="bulan-divider"><td colspan="5"><span class="bulan-label">📅 ${label} 2026</span></td></tr>`;
+    if (bulanGroup && bulanGroup !== lastBulanGroup) {
+      lastBulanGroup = bulanGroup;
+      let label;
+      // Cek apakah format baru "key|monthIdx|year"
+      const parts = bulanGroup.split('|');
+      if (parts.length === 3) {
+        const monthIdx = parseInt(parts[1]);
+        const year = parts[2];
+        const MN_ID = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+        label = (MN_ID[monthIdx] || '') + ' ' + year;
+      } else {
+        const idx = MK_PENGELUARAN.indexOf(bulanGroup);
+        label = (idx >= 0 ? MN_FULL[idx] : bulanGroup) + ' 2026';
+      }
+      sep = `<tr class="bulan-divider"><td colspan="5"><span class="bulan-label">📅 ${label}</span></td></tr>`;
     }
     return sep + `<tr>
       <td class="no-cell">${r.no || '—'}</td>
@@ -788,6 +829,19 @@ async function init() {
 init();
 function toggleNav(){document.getElementById('nav-drawer').classList.toggle('open');document.getElementById('nav-overlay').classList.toggle('open');document.getElementById('ham-btn').classList.toggle('open')}
 function closeNav(){document.getElementById('nav-drawer').classList.remove('open');document.getElementById('nav-overlay').classList.remove('open');document.getElementById('ham-btn').classList.remove('open')}
+
+// Tandai nav-item aktif berdasarkan nama file halaman yang sedang dibuka
+(function(){
+  const current = window.location.pathname.split('/').pop().toLowerCase().replace(/\s/g,'');
+  document.querySelectorAll('.nav-item').forEach(function(el){
+    const href = (el.getAttribute('href') || '').toLowerCase().replace(/\s/g,'');
+    if (href && current && href === current) {
+      el.classList.add('active');
+    } else {
+      el.classList.remove('active');
+    }
+  });
+})();
 </script>
 </body>
 </html>
