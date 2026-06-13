@@ -239,6 +239,23 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
 .no-cell{font-family:'DM Mono',monospace;font-size:11px;color:var(--text3)}
 .blok-tag{font-family:'DM Mono',monospace;font-size:10.5px;background:var(--bg);border:1px solid var(--border);padding:2px 8px;border-radius:6px;color:var(--text2);display:inline-block;white-space:nowrap}
 .nama-cell{font-size:12.5px;font-weight:500}
+.nama-wrap{display:flex;flex-direction:column;gap:2px}
+.komentar-cell{
+  font-size:11px;color:var(--text2);font-style:italic;
+  display:flex;align-items:flex-start;gap:5px;line-height:1.4;
+  animation:fadeUp .5s ease both;
+}
+.komentar-emoji{
+  display:inline-block;flex-shrink:0;font-size:13px;
+  animation:wiggle 1.8s ease-in-out infinite;
+}
+@keyframes wiggle{
+  0%,100%{transform:rotate(0deg) scale(1)}
+  20%{transform:rotate(-12deg) scale(1.12)}
+  40%{transform:rotate(10deg) scale(1.08)}
+  60%{transform:rotate(-6deg) scale(1.05)}
+  80%{transform:rotate(4deg) scale(1.02)}
+}
 .amount-cell{font-family:'DM Mono',monospace;font-size:12.5px;font-weight:600;text-align:right;white-space:nowrap;color:var(--green)}
 .amount-cell.zero{color:var(--text3);font-weight:500}
 
@@ -255,6 +272,35 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
 @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
 
 @media(max-width:700px){.container{padding:1rem}.header{padding:1rem}}
+
+/* MOBILE: perkecil cards ringkasan, fokus ke progres & tabel */
+@media(max-width:640px){
+  .pp-hero{padding:1.25rem 1.1rem;margin-bottom:.85rem}
+  .pp-hero-title{font-size:15px}
+  .pp-hero-icon{font-size:20px}
+  .pp-hero-sub{font-size:10.5px;margin-bottom:.8rem}
+  .pp-progress-track{height:11px}
+  .pp-progress-pct{font-size:20px}
+  .pp-progress-label{font-size:10px}
+
+  .pp-cards{
+    grid-template-columns:repeat(3,1fr);
+    gap:6px;margin-bottom:.85rem;
+  }
+  .pp-card{padding:.55rem .5rem;gap:1px;border-radius:10px}
+  .pp-card .pp-label{font-size:7.5px;line-height:1.2}
+  .pp-card .pp-value{font-size:12px;line-height:1.25}
+  .pp-card .pp-sub{display:none}
+
+  .filter-row{margin-bottom:.6rem}
+  .filter-row input{height:34px;font-size:12.5px}
+
+  .table-wrap table{font-size:12px}
+  .table-wrap thead th{padding:7px 8px;font-size:9.5px}
+  .table-wrap tbody td{padding:7px 8px}
+  .komentar-cell{font-size:10.5px}
+  .amount-cell{font-size:11.5px}
+}
 @media print{.header,.filter-row,.btn{display:none!important}.table-wrap{border:1px solid #ccc}body{background:#fff}}
 </style>
 </head>
@@ -320,7 +366,7 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
 
   <div class="nav-divider"></div>
   <div class="nav-section">Program Patungan</div>
-  <a class="nav-item" href="patungan-pingpong.html">
+  <a class="nav-item" href="patungan_pingpong.html">
     <span class="nav-icon">🏓</span>
     Meja Pingpong
     <span class="nav-item-arrow">›</span>
@@ -467,15 +513,16 @@ function parseCSV(text){
     const bUp = (cols[1]||'').toUpperCase();
     if (aUp === 'NO' || bUp === 'BLOK') continue;
 
-    // Baris data anggota: NO, BLOK, PEMILIK, JUMLAH IURAN
+    // Baris data anggota: NO, BLOK, PEMILIK, JUMLAH IURAN, KOMENTAR
     const no = cols[0] || '';
     const blok = cols[1] || '';
     const nama = cols[2] || '';
     const jumlah = parseNum(cols[3]);
+    const komentar = (cols[4] || '').trim();
 
     if (!blok && !nama) continue;
 
-    allPP.push({ no, blok, nama, jumlah });
+    allPP.push({ no, blok, nama, jumlah, komentar });
   }
 }
 
@@ -497,6 +544,19 @@ function buildUI(){
   document.getElementById('last-update').textContent = 'Update: ' + new Date().toLocaleString('id-ID', {day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
 }
 
+function pickEmoji(text){
+  const t = text.toLowerCase();
+  if (/butterfly|merek|kualitas|bagus|jangan/.test(t)) return '🏓';
+  if (/mantap|semangat|gas|ayo|yuk/.test(t)) return '💪';
+  if (/terima kasih|makasih|thanks/.test(t)) return '🙏';
+  if (/cepat|segera|buru/.test(t)) return '⚡';
+  if (/oke|ok|siap|setuju/.test(t)) return '👍';
+  if (/harga|murah|hemat|budget/.test(t)) return '💸';
+  if (/lucu|wkwk|haha|😂/.test(t)) return '😄';
+  if (/keren|wow|mantul/.test(t)) return '🔥';
+  return '💬';
+}
+
 function renderPP(){
   const q = (document.getElementById('search-pp').value || '').toLowerCase();
   let list = allPP.filter(r =>
@@ -506,10 +566,18 @@ function renderPP(){
   let total = 0;
   const rows = list.map(r => {
     total += r.jumlah;
+    const komentarHtml = r.komentar
+      ? `<div class="komentar-cell"><span class="komentar-emoji">${pickEmoji(r.komentar)}</span><span>${r.komentar}</span></div>`
+      : '';
     return `<tr>
       <td class="no-cell">${r.no}</td>
       <td><span class="blok-tag">${r.blok}</span></td>
-      <td class="nama-cell">${r.nama}</td>
+      <td class="nama-cell">
+        <div class="nama-wrap">
+          <span>${r.nama}</span>
+          ${komentarHtml}
+        </div>
+      </td>
       <td class="amount-cell ${r.jumlah > 0 ? '' : 'zero'}">${r.jumlah > 0 ? fmtRp(r.jumlah) : '—'}</td>
     </tr>`;
   }).join('');
