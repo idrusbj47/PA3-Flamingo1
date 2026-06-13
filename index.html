@@ -231,6 +231,40 @@ body{
 }
 .badge-live::before{content:'';width:5px;height:5px;background:var(--g3);border-radius:50%;animation:pulse 1.4s ease infinite}
 @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.3)}}
+.badge-live.amber{background:rgba(255,215,122,0.2);color:#ffd77a;border-color:rgba(255,215,122,0.4)}
+.badge-live.amber::before{background:#ffd77a}
+
+/* ── PINGPONG CARD (progress mini) ── */
+.rcard.ypp{border-left:3px solid rgba(255,215,122,0.7)}
+.rcard.ypp .rcard-title{color:#fff}
+.rcard-pp-progress{
+  margin-top:6px;display:flex;align-items:center;gap:8px;
+}
+.rcard-pp-track{
+  flex:1;height:6px;border-radius:999px;overflow:hidden;
+  background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.08);
+}
+.rcard-pp-fill{
+  height:100%;width:0%;border-radius:999px;
+  background:linear-gradient(90deg,#0a7c52,#1da876,#ffd77a);
+  background-size:200% 100%;
+  position:relative;
+  transition:width 1.4s cubic-bezier(.22,1,.36,1);
+  animation:shimmerMove 3s linear infinite;
+}
+.rcard-pp-fill::after{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,0.4),transparent);
+  width:40px;animation:shineSweep 2.4s ease-in-out infinite;
+}
+@keyframes shimmerMove{0%{background-position:0% 0}100%{background-position:200% 0}}
+@keyframes shineSweep{0%{transform:translateX(-60px)}100%{transform:translateX(220px)}}
+.rcard-pp-pct{
+  font-family:'DM Mono',monospace;font-size:11px;font-weight:600;color:#ffd77a;
+  min-width:38px;text-align:right;
+  animation:countGlow 2.4s ease-in-out infinite alternate;
+}
+@keyframes countGlow{from{text-shadow:0 0 4px rgba(255,215,122,0.1)}to{text-shadow:0 0 12px rgba(255,215,122,0.45)}}
 
 /* ── WA BUTTON ── */
 .wa-section{
@@ -395,6 +429,24 @@ body{
       </div>
       <div class="rcard-arrow">›</div>
     </a>
+
+    <a class="rcard glass ypp" href="patungan-pingpong.html">
+      <div class="rcard-shine"></div>
+      <div class="rcard-icon">🏓</div>
+      <div class="rcard-body">
+        <div class="rcard-title">
+          <span class="badge-live amber">Live</span>
+        </div>
+        <div class="rcard-sub">Iuran sukarela pengadaan meja pingpong</div>
+        <div class="rcard-pp-progress">
+          <div class="rcard-pp-track">
+            <div class="rcard-pp-fill" id="pp-mini-fill"></div>
+          </div>
+          <span class="rcard-pp-pct" id="pp-mini-pct">0%</span>
+        </div>
+      </div>
+      <div class="rcard-arrow">›</div>
+    </a>
   </div>
 
   <!-- WA BUTTON -->
@@ -494,6 +546,56 @@ async function loadSaldo(){
 }
 
 loadSaldo();
+
+// ── Ambil progres patungan meja pingpong ──
+const PP_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQhPHh5EYrI9zxDYg1qsFbEWxedCFYk8XPQbQ0m4wTT6EIGIzc3MpHZ5_bCAL2yb6saBqz33QxPaxFr/pub?gid=1252704258&single=true&output=csv';
+
+function animateCount(el, fillEl, target){
+  const duration = 1400;
+  const start = performance.now();
+  function step(now){
+    const t = Math.min(1, (now - start) / duration);
+    const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic
+    const val = target * eased;
+    el.textContent = (val % 1 === 0 ? val.toFixed(0) : val.toFixed(2)) + '%';
+    fillEl.style.width = val + '%';
+    if (t < 1) requestAnimationFrame(step);
+    else {
+      el.textContent = (target % 1 === 0 ? target.toFixed(0) : target.toFixed(2)) + '%';
+      fillEl.style.width = target + '%';
+    }
+  }
+  requestAnimationFrame(step);
+}
+
+async function loadPingpong(){
+  try{
+    const url = PP_CSV_URL + (PP_CSV_URL.includes('?') ? '&' : '?') + 't=' + Date.now();
+    const res = await fetch(url);
+    if(!res.ok) return;
+    const text = await res.text();
+    const lines = text.split(/\r?\n/);
+
+    let terkumpul = 0, target = 0;
+    for(let i=0;i<Math.min(10,lines.length);i++){
+      const cols = splitLine(lines[i]).map(c => c.replace(/^"|"$/g,''));
+      const labelUp = (cols[2] || '').toUpperCase();
+      if (labelUp.includes('IURAN TERKUMPUL')) terkumpul = parseNum(cols[3]);
+      if (labelUp.includes('TARGET')) target = parseNum(cols[3]);
+    }
+
+    const pct = target > 0 ? Math.min(100, (terkumpul / target) * 100) : 0;
+    const pctRound = Math.round(pct * 100) / 100;
+
+    const fillEl = document.getElementById('pp-mini-fill');
+    const pctEl = document.getElementById('pp-mini-pct');
+    if(fillEl && pctEl){
+      setTimeout(() => animateCount(pctEl, fillEl, pctRound), 200);
+    }
+  }catch(e){ console.warn('Progres pingpong tidak tersedia:', e) }
+}
+
+loadPingpong();
 </script>
 </body>
 </html>
